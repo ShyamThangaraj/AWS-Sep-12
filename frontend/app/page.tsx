@@ -12,6 +12,7 @@ import { CursorFollower } from "@/components/cursor-follower"
 import { ScrollProgress } from "@/components/scroll-progress"
 import { FloatingElements } from "@/components/floating-elements"
 import { BackendTest } from "@/components/backend-test"
+import { ClientOnly } from "@/components/client-only"
 import { Scale, FileText, Phone, History, Sparkles, ArrowRight, CheckCircle, Settings } from "lucide-react"
 import Link from "next/link"
 
@@ -117,10 +118,12 @@ Your consultation has been processed by Gemini AI and stored in the Weaviate dat
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-muted/20 to-background relative">
-      <AnimatedBackground />
-      <FloatingElements />
-      <CursorFollower />
-      <ScrollProgress />
+      <ClientOnly>
+        <AnimatedBackground />
+        <FloatingElements />
+        <CursorFollower />
+        <ScrollProgress />
+      </ClientOnly>
 
       <header className="border-b border-border/50 backdrop-blur-sm bg-background/80 sticky top-0 z-50">
         <div className="container mx-auto px-6 py-4">

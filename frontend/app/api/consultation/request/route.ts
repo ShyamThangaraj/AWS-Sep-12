@@ -3,22 +3,31 @@ import { config } from "@/lib/config"
 
 export async function POST(request: NextRequest) {
   try {
+    console.log("\n🚀 ===== FRONTEND CONSULTATION REQUEST =====")
+    
     // Parse the form data from the request
     const formData = await request.formData()
+    console.log("📝 Parsed form data from request")
     
     const founder = formData.get('founder') as string
     const consultation = formData.get('consultation') as string
     const phoneNumber = formData.get('phoneNumber') as string
+    
+    console.log(`👤 Founder: ${founder}`)
+    console.log(`📞 Phone: ${phoneNumber}`)
+    console.log(`💬 Consultation: ${consultation.substring(0, 100)}...`)
     
     // Get uploaded files
     const files: File[] = []
     const pdfFiles: File[] = []
     const imageFiles: File[] = []
     
+    console.log("📁 Extracting files from form data...")
     // Extract files from form data
     for (const [key, value] of formData.entries()) {
       if (value instanceof File && value.size > 0) {
         files.push(value)
+        console.log(`   📄 Found file: ${value.name} (${value.size} bytes, ${value.type})`)
         
         // Categorize files
         if (value.type === 'application/pdf') {
@@ -28,6 +37,8 @@ export async function POST(request: NextRequest) {
         }
       }
     }
+    
+    console.log(`📊 File summary: ${files.length} total, ${pdfFiles.length} PDFs, ${imageFiles.length} images`)
 
     // Create a comprehensive prompt that includes the founder context
     const founderContext = getFounderContext(founder)
@@ -57,13 +68,17 @@ Please analyze this consultation request and the uploaded documents to provide c
       weaviateFormData.append('images', image)
     })
 
-    console.log(`Sending to Weaviate: ${pdfFiles.length} PDFs, ${imageFiles.length} images`)
+    console.log(`🚀 Sending to Weaviate: ${pdfFiles.length} PDFs, ${imageFiles.length} images`)
+    console.log(`🔗 Backend URL: ${config.backendUrl}/weaviate/process-form`)
 
     // Call the Weaviate process-form endpoint
+    console.log("📡 Making request to backend...")
     const backendResponse = await fetch(`${config.backendUrl}/weaviate/process-form`, {
       method: "POST",
       body: weaviateFormData,
     })
+    
+    console.log(`📊 Backend response status: ${backendResponse.status}`)
 
     if (!backendResponse.ok) {
       const errorText = await backendResponse.text()
@@ -71,6 +86,9 @@ Please analyze this consultation request and the uploaded documents to provide c
     }
 
     const result = await backendResponse.json()
+    console.log("✅ Backend processing completed successfully")
+    console.log(`🆔 Session ID: ${result.data?.session_id}`)
+    console.log(`💾 Weaviate stored: ${result.weaviate_stored}`)
 
     return NextResponse.json({
       success: true,

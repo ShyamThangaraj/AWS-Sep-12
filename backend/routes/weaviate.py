@@ -32,19 +32,25 @@ async def process_with_gemini(prompt: str, pdf_paths: List[str], image_paths: Li
     Returns normalized text suitable for Weaviate storage
     """
     try:
+        print(f"      🔧 Initializing Gemini client...")
         client = get_gemini_client()
         
         # Build the content array for Gemini
         contents = [prompt]
+        print(f"      📝 Added prompt to contents ({len(prompt)} characters)")
         
         # Add PDF files (Note: Gemini may need PDFs to be converted to text first)
-        for pdf_path in pdf_paths:
+        print(f"      📄 Processing {len(pdf_paths)} PDF files...")
+        for i, pdf_path in enumerate(pdf_paths):
+            print(f"        Adding PDF {i+1}: {Path(pdf_path).name}")
             # For now, we'll add a note about the PDF
             # In a real implementation, you might want to extract text from PDFs first
             contents.append(f"[PDF file: {Path(pdf_path).name}]")
         
         # Add image files
-        for image_path in image_paths:
+        print(f"      🖼️  Processing {len(image_paths)} image files...")
+        for i, image_path in enumerate(image_paths):
+            print(f"        Reading image {i+1}: {Path(image_path).name}")
             with open(image_path, 'rb') as image_file:
                 image_data = image_file.read()
             
@@ -55,6 +61,8 @@ async def process_with_gemini(prompt: str, pdf_paths: List[str], image_paths: Li
                 mime_type = "image/png"
             else:
                 mime_type = "image/jpeg"  # default
+            
+            print(f"        ✅ Added image {i+1} ({len(image_data)} bytes, {mime_type})")
             
             # Create inline data part for the image
             image_part = Part.from_bytes(
@@ -85,16 +93,23 @@ async def process_with_gemini(prompt: str, pdf_paths: List[str], image_paths: Li
         """
         
         contents.append(normalization_instruction)
+        print(f"      📋 Added normalization instruction")
+        print(f"      📊 Total content parts: {len(contents)}")
         
         # Generate content using Gemini 2.0 Flash
+        print(f"      🚀 Sending to Gemini 2.0 Flash Thinking...")
         response = client.models.generate_content(
             model="gemini-2.0-flash-thinking-exp",  # Using Gemini 2.0 Flash
             contents=contents,
         )
         
+        print(f"      ✅ Received response from Gemini ({len(response.text)} characters)")
         return response.text
         
     except Exception as e:
+        print(f"      ❌ Gemini processing error: {str(e)}")
+        import traceback
+        print(f"      📋 Traceback: {traceback.format_exc()}")
         raise Exception(f"Error processing with Gemini: {str(e)}")
 
 @router.post("/process-form")
@@ -110,10 +125,19 @@ async def process_form(
     - images: List of image files (optional)
     """
     
+    print(f"\n🚀 ===== FORM PROCESSING STARTED =====")
+    print(f"📝 Received form submission:")
+    print(f"   - Prompt length: {len(prompt)} characters")
+    print(f"   - Prompt preview: {prompt[:100]}...")
+    print(f"   - PDFs received: {len(pdfs) if pdfs else 0}")
+    print(f"   - Images received: {len(images) if images else 0}")
+    
     # Create a unique session directory for this request
     session_id = str(uuid.uuid4())
     session_dir = UPLOAD_DIR / session_id
     session_dir.mkdir(exist_ok=True)
+    print(f"🆔 Generated session ID: {session_id}")
+    print(f"📁 Created session directory: {session_dir}")
     
     uploaded_files = {
         "prompt": prompt,
@@ -123,58 +147,90 @@ async def process_form(
     }
     
     # Save PDF files
+    print(f"\n📄 ===== PROCESSING PDF FILES =====")
     if pdfs:
         pdf_dir = session_dir / "pdfs"
         pdf_dir.mkdir(exist_ok=True)
+        print(f"📁 Created PDF directory: {pdf_dir}")
         
-        for pdf in pdfs:
+        for i, pdf in enumerate(pdfs):
             if pdf.filename:
+                print(f"   Processing PDF {i+1}/{len(pdfs)}: {pdf.filename}")
                 file_path = pdf_dir / pdf.filename
                 async with aiofiles.open(file_path, 'wb') as f:
                     content = await pdf.read()
                     await f.write(content)
+                print(f"   ✅ Saved: {pdf.filename} ({len(content)} bytes)")
                 uploaded_files["pdfs"].append({
                     "filename": pdf.filename,
                     "size": len(content),
                     "path": str(file_path)
                 })
+    else:
+        print("   No PDF files to process")
     
     # Save image files
+    print(f"\n🖼️  ===== PROCESSING IMAGE FILES =====")
     if images:
         image_dir = session_dir / "images"
         image_dir.mkdir(exist_ok=True)
+        print(f"📁 Created image directory: {image_dir}")
         
-        for image in images:
+        for i, image in enumerate(images):
             if image.filename:
+                print(f"   Processing image {i+1}/{len(images)}: {image.filename}")
                 file_path = image_dir / image.filename
                 async with aiofiles.open(file_path, 'wb') as f:
                     content = await image.read()
                     await f.write(content)
+                print(f"   ✅ Saved: {image.filename} ({len(content)} bytes)")
                 uploaded_files["images"].append({
                     "filename": image.filename,
                     "size": len(content),
                     "path": str(file_path)
                 })
+    else:
+        print("   No image files to process")
     
     # Process with Gemini
+    print(f"\n🤖 ===== GEMINI AI PROCESSING =====")
     try:
         pdf_paths = [pdf["path"] for pdf in uploaded_files["pdfs"]]
         image_paths = [image["path"] for image in uploaded_files["images"]]
         
+        print(f"   📄 PDF files to process: {len(pdf_paths)}")
+        for pdf_path in pdf_paths:
+            print(f"     - {pdf_path}")
+        print(f"   🖼️  Image files to process: {len(image_paths)}")
+        for image_path in image_paths:
+            print(f"     - {image_path}")
+        
+        print(f"   🚀 Sending to Gemini AI...")
         normalized_text = await process_with_gemini(prompt, pdf_paths, image_paths)
+        
+        print(f"   ✅ Gemini processing completed!")
+        print(f"   📊 Normalized text length: {len(normalized_text)} characters")
+        print(f"   📝 First 200 characters: {normalized_text[:200]}...")
         
         # Add the normalized text to the response
         uploaded_files["normalized_text"] = normalized_text
         
         # Store in Weaviate
+        print(f"\n💾 ===== WEAVIATE STORAGE =====")
         weaviate_stored = False
         try:
             # Connect to Weaviate
+            print(f"   🔗 Connecting to Weaviate...")
             if weaviate_service.connect():
+                print(f"   ✅ Connected to Weaviate successfully")
+                print(f"   📊 Collection: {weaviate_service.collection_name}")
+                
                 # Create collection if it doesn't exist
+                print(f"   🏗️  Ensuring collection exists...")
                 weaviate_service.create_collection()
                 
                 # Store the document
+                print(f"   💾 Storing document in Weaviate...")
                 weaviate_stored = weaviate_service.store_document(
                     session_id=session_id,
                     prompt=prompt,
@@ -183,11 +239,29 @@ async def process_form(
                     image_files=uploaded_files["images"]
                 )
                 
+                if weaviate_stored:
+                    print(f"   ✅ Successfully stored in Weaviate!")
+                    print(f"   🆔 Session ID: {session_id}")
+                else:
+                    print(f"   ❌ Failed to store in Weaviate")
+                
                 weaviate_service.close()
+                print(f"   🔌 Disconnected from Weaviate")
             else:
-                print("Failed to connect to Weaviate")
+                print(f"   ❌ Failed to connect to Weaviate")
         except Exception as weaviate_error:
-            print(f"Weaviate storage error: {weaviate_error}")
+            print(f"   ❌ Weaviate storage error: {weaviate_error}")
+            import traceback
+            print(f"   📋 Traceback: {traceback.format_exc()}")
+        
+        print(f"\n🎉 ===== FORM PROCESSING COMPLETED =====")
+        print(f"   ✅ Session ID: {session_id}")
+        print(f"   📁 Files processed: {len(uploaded_files['pdfs']) + len(uploaded_files['images'])}")
+        print(f"   📄 PDFs: {len(uploaded_files['pdfs'])}")
+        print(f"   🖼️  Images: {len(uploaded_files['images'])}")
+        print(f"   💾 Weaviate stored: {weaviate_stored}")
+        print(f"   📊 Normalized text length: {len(normalized_text)} characters")
+        print(f"==========================================\n")
         
         return {
             "message": "Form processed successfully with Gemini",
@@ -197,6 +271,11 @@ async def process_form(
         }
         
     except Exception as e:
+        print(f"\n❌ ===== FORM PROCESSING ERROR =====")
+        print(f"   Error: {str(e)}")
+        import traceback
+        print(f"   Traceback: {traceback.format_exc()}")
+        print(f"==========================================\n")
         return {
             "message": f"Error processing with Gemini: {str(e)}",
             "data": uploaded_files,

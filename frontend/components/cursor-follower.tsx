@@ -5,8 +5,11 @@ import { useEffect, useState } from "react"
 export function CursorFollower() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
   const [isVisible, setIsVisible] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
 
   useEffect(() => {
+    setIsMounted(true)
+    
     const handleMouseMove = (e: MouseEvent) => {
       setMousePosition({ x: e.clientX, y: e.clientY })
       setIsVisible(true)
@@ -24,6 +27,10 @@ export function CursorFollower() {
       document.removeEventListener("mouseleave", handleMouseLeave)
     }
   }, [])
+
+  if (!isMounted) {
+    return null
+  }
 
   return (
     <div

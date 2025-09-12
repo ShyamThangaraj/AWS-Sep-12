@@ -4,8 +4,11 @@ import { useEffect, useState } from "react"
 
 export function ScrollProgress() {
   const [scrollProgress, setScrollProgress] = useState(0)
+  const [isMounted, setIsMounted] = useState(false)
 
   useEffect(() => {
+    setIsMounted(true)
+    
     const handleScroll = () => {
       const totalHeight = document.documentElement.scrollHeight - window.innerHeight
       const progress = (window.scrollY / totalHeight) * 100
@@ -15,6 +18,10 @@ export function ScrollProgress() {
     window.addEventListener("scroll", handleScroll)
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
+
+  if (!isMounted) {
+    return null
+  }
 
   return (
     <div className="fixed top-0 left-0 w-full h-1 bg-border/20 z-50">
