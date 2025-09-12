@@ -489,3 +489,124 @@ async def query_with_agent(query: str):
             "message": f"Error with Query Agent: {str(e)}",
             "status": "error"
         }
+
+@router.post("/weaviate-query-generator")
+async def generate_weaviate_query_for_vapi(prompt: str):
+    """
+    Generate a focused Weaviate query from consultation prompt for VAPI context
+    
+    This endpoint:
+    1. Takes the original consultation prompt
+    2. Uses Gemini to generate a focused query for Weaviate
+    3. Uses that query to get relevant context for VAPI
+    4. Returns only the necessary information for voice AI
+    """
+    try:
+        print(f"\n🎯 ===== WEAVIATE QUERY GENERATOR FOR VAPI =====")
+        print(f"📝 Original prompt: {prompt[:200]}...")
+        
+        # Step 1: Generate focused query using Gemini
+        print(f"\n🤖 ===== GENERATING FOCUSED QUERY =====")
+        focused_query = await generate_focused_query_for_weaviate(prompt)
+        print(f"🎯 Generated focused query: {focused_query}")
+        
+        # Step 2: Use the focused query to search Weaviate and extract raw data
+        print(f"\n🔍 ===== SEARCHING WEAVIATE WITH FOCUSED QUERY =====")
+        if weaviate_service.connect():
+            # Use semantic search to get raw data objects from Weaviate
+            collection = weaviate_service.client.collections.get("NormalizedDocuments")
+            
+            print(f"      🔍 Performing semantic search with focused query...")
+            search_results = collection.query.near_text(
+                query=focused_query,
+                limit=5,  # Get top 5 most relevant documents
+                return_metadata=["distance", "score"]
+            )
+            
+            weaviate_service.close()
+            
+            # Extract and format the data for VAPI
+            extracted_data = []
+            for result in search_results.objects:
+                data_object = {
+                    "id": str(result.uuid),
+                    "properties": result.properties,
+                    "metadata": {
+                        "distance": result.metadata.distance if result.metadata.distance else None,
+                        "score": result.metadata.score if result.metadata.score else None
+                    }
+                }
+                extracted_data.append(data_object)
+            
+            print(f"✅ Retrieved {len(extracted_data)} data objects from Weaviate")
+            print(f"📊 Data objects preview: {len(str(extracted_data))} characters total")
+            
+            return {
+                "message": "VAPI data extracted successfully",
+                "original_prompt": prompt,
+                "focused_query": focused_query,
+                "extracted_data": extracted_data,
+                "data_count": len(extracted_data),
+                "status": "success"
+            }
+        else:
+            return {
+                "message": "Failed to connect to Weaviate",
+                "status": "error"
+            }
+            
+    except Exception as e:
+        print(f"❌ Error in Weaviate Query Generator: {str(e)}")
+        import traceback
+        print(f"📋 Traceback: {traceback.format_exc()}")
+        return {
+            "message": f"Error generating VAPI context: {str(e)}",
+            "status": "error"
+        }
+
+async def generate_focused_query_for_weaviate(original_prompt: str) -> str:
+    """
+    Use Gemini to generate a focused query for Weaviate based on the original consultation prompt
+    """
+    try:
+        print(f"      🔧 Initializing Gemini client for query generation...")
+        client = get_gemini_client()
+        
+        # Create a prompt to generate a focused Weaviate query
+        query_generation_prompt = f"""
+        You are a query generation expert for a Weaviate vector database. Your task is to create a focused, specific query that will retrieve only the most relevant information from the database for a voice AI (VAPI) consultation.
+
+        Original consultation prompt: "{original_prompt}"
+
+        Based on this consultation prompt, generate a single, focused query that will:
+        1. Retrieve only the most relevant context for the specific business challenge
+        2. Focus on actionable insights and strategies
+        3. Provide context that would be useful for a voice AI consultation
+        4. Avoid generic information and focus on specific, actionable advice
+
+        The query should be:
+        - Specific to the business challenge mentioned
+        - Focused on practical strategies and insights
+        - Suitable for a voice AI to provide personalized advice
+        - Concise but comprehensive
+
+        Generate only the query text, nothing else.
+        """
+        
+        print(f"      📝 Sending query generation prompt to Gemini...")
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-thinking-exp",
+            contents=[query_generation_prompt],
+        )
+        
+        focused_query = response.text.strip()
+        print(f"      ✅ Generated focused query: {focused_query}")
+        
+        return focused_query
+        
+    except Exception as e:
+        print(f"      ❌ Error generating focused query: {str(e)}")
+        # Fallback to a simple query based on the original prompt
+        fallback_query = f"Provide specific strategies and insights for: {original_prompt[:100]}"
+        print(f"      🔄 Using fallback query: {fallback_query}")
+        return fallback_query
