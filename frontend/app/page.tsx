@@ -67,25 +67,49 @@ export default function HomePage() {
     setIsSubmitting(true)
 
     try {
+      console.log("🚀 Starting form submission...")
+      console.log("📝 Form data:", { selectedFounder, consultation: consultation.substring(0, 50), phoneNumber })
+      console.log("📁 Uploaded files:", uploadedFiles.map(f => ({ name: f.name, type: f.type, size: f.size })))
+
       // Create FormData to properly send files
       const formData = new FormData()
       formData.append('founder', selectedFounder)
       formData.append('consultation', consultation)
       formData.append('phoneNumber', phoneNumber)
       
-      // Add uploaded files to FormData
-      uploadedFiles.forEach((file, index) => {
-        formData.append(`file_${index}`, file)
+      // Add uploaded files to FormData with proper categorization
+      uploadedFiles.forEach((file) => {
+        console.log(`📄 Adding file: ${file.name} (${file.type})`)
+        if (file.type === 'application/pdf') {
+          formData.append('pdfs', file)
+          console.log(`   ✅ Added as PDF`)
+        } else if (file.type.startsWith('image/')) {
+          formData.append('images', file)
+          console.log(`   ✅ Added as image`)
+        } else {
+          // For other file types, append with generic name
+          formData.append('files', file)
+          console.log(`   ✅ Added as generic file`)
+        }
       })
 
+      console.log("📡 Making API request to /api/consultation/request...")
       const response = await fetch("/api/consultation/request", {
         method: "POST",
         body: formData, // Don't set Content-Type header, let browser set it with boundary
       })
+      
+      console.log("📊 Response status:", response.status)
 
       const result = await response.json()
+      console.log("📋 Response result:", result)
 
       if (response.ok && result.success) {
+        console.log("✅ Form submission successful!")
+        console.log("🆔 Session ID:", result.consultation_id)
+        console.log("📁 Files processed:", result.files_processed)
+        console.log("💾 Weaviate stored:", result.weaviate_stored)
+        
         // Reset form and show success
         setStep("input")
         setConsultation("")
@@ -104,17 +128,45 @@ Your consultation has been processed by Gemini AI and stored in the Weaviate dat
         
         alert(message)
       } else {
+        console.log("❌ Form submission failed!")
+        console.log("📊 Response status:", response.status)
+        console.log("📋 Error result:", result)
         throw new Error(result.message || 'Failed to process consultation')
       }
     } catch (error) {
-      console.error("Failed to submit consultation:", error)
+      console.error("❌ Failed to submit consultation:", error)
+      console.error("📋 Error details:", {
+        name: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : 'No stack trace'
+      })
       alert(`Failed to submit consultation: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
+      console.log("🏁 Form submission completed, setting isSubmitting to false")
       setIsSubmitting(false)
     }
   }
 
   const isPhoneValid = phoneNumber.length >= 10
+
+  // Debug function to test form submission
+  const testFormSubmission = async () => {
+    console.log("🧪 Testing form submission...")
+    console.log("📝 Current form state:", {
+      selectedFounder,
+      consultation: consultation.substring(0, 50),
+      phoneNumber,
+      uploadedFiles: uploadedFiles.length
+    })
+    
+    if (!phoneNumber.trim() || !selectedFounder || !consultation.trim()) {
+      console.log("❌ Form validation failed - missing required fields")
+      return
+    }
+    
+    console.log("✅ Form validation passed, calling handleCallRequest...")
+    await handleCallRequest()
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-muted/20 to-background relative">
@@ -328,6 +380,18 @@ Your consultation has been processed by Gemini AI and stored in the Weaviate dat
                   >
                     {isSubmitting ? "Requesting Call..." : "Request Call"}
                     <Phone className="h-5 w-5 ml-2" />
+                  </Button>
+                </div>
+                
+                {/* Debug button - remove this in production */}
+                <div className="flex justify-center pt-4">
+                  <Button 
+                    variant="secondary" 
+                    onClick={testFormSubmission}
+                    size="sm"
+                    className="text-xs"
+                  >
+                    🧪 Debug Form Submission
                   </Button>
                 </div>
               </CardContent>
