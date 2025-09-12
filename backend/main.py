@@ -1,5 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from routes import weaviate
+from dotenv import load_dotenv
+import os
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI(title="Startup Voice Agent API", version="1.0.0")
 
@@ -12,6 +18,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include routers
+app.include_router(weaviate.router)
+
 @app.get("/")
 async def root():
     return {"message": "Welcome to Startup Voice Agent API"}
@@ -19,6 +28,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
 
 if __name__ == "__main__":
     import uvicorn

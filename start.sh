@@ -24,18 +24,27 @@ BACKEND_PID=$!
 cd ..
 
 # Wait a moment for backend to start
-sleep 2
+sleep 3
 
 # Start frontend server
 echo "🎨 Starting Next.js frontend server..."
 cd frontend
-npm run dev &
+
+# Check if pnpm is available, otherwise use npm
+if command -v pnpm &> /dev/null; then
+    echo "📦 Using pnpm to start frontend..."
+    pnpm run dev &
+else
+    echo "📦 Using npm to start frontend..."
+    npm run dev &
+fi
+
 FRONTEND_PID=$!
 cd ..
 
 echo "✅ Both servers are starting up!"
 echo "📡 Backend API: http://localhost:8000"
-echo "🎨 Frontend: http://localhost:8000"
+echo "🎨 Frontend: http://localhost:3000"
 echo "📚 API Docs: http://localhost:8000/docs"
 echo ""
 echo "Press Ctrl+C to stop both servers"
