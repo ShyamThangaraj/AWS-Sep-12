@@ -1,5 +1,6 @@
 from fastapi import APIRouter, File, UploadFile, Form
 from typing import List
+from pydantic import BaseModel
 import aiofiles
 import uuid
 import os
@@ -13,6 +14,11 @@ from services.weaviate_service import weaviate_service
 load_dotenv()
 
 router = APIRouter(prefix="/weaviate", tags=["weaviate"])
+
+# Pydantic models for request/response
+class VAPIRequest(BaseModel):
+    prompt: str
+    phone_number: str = None
 
 # Create uploads directory if it doesn't exist
 UPLOAD_DIR = Path("uploads")
@@ -115,6 +121,7 @@ async def process_with_gemini(prompt: str, pdf_paths: List[str], image_paths: Li
 @router.post("/process-form")
 async def process_form(
     prompt: str = Form(...),
+    phone_number: str = Form(None),
     pdfs: List[UploadFile] = File(None),
     images: List[UploadFile] = File(None)
 ):
@@ -141,6 +148,7 @@ async def process_form(
     
     uploaded_files = {
         "prompt": prompt,
+        "phone_number": phone_number,
         "pdfs": [],
         "images": [],
         "session_id": session_id
@@ -491,70 +499,97 @@ async def query_with_agent(query: str):
         }
 
 @router.post("/weaviate-query-generator")
-async def generate_weaviate_query_for_vapi(prompt: str):
+async def generate_weaviate_query_for_vapi(request: VAPIRequest):
     """
-    Generate a focused Weaviate query from consultation prompt for VAPI context
-    
-    This endpoint:
-    1. Takes the original consultation prompt
-    2. Uses Gemini to generate a focused query for Weaviate
-    3. Uses that query to get relevant context for VAPI
-    4. Returns only the necessary information for voice AI
+    Generate a focused Weaviate query from consultation prompt for VAPI context and make a VAPI call
     """
     try:
         print(f"\n🎯 ===== WEAVIATE QUERY GENERATOR FOR VAPI =====")
-        print(f"📝 Original prompt: {prompt[:200]}...")
-        
+        print(f"📝 Original prompt: {request.prompt[:200]}...")
+        print(f"📞 Phone number: {request.phone_number}")
+
         # Step 1: Generate focused query using Gemini
         print(f"\n🤖 ===== GENERATING FOCUSED QUERY =====")
-        focused_query = await generate_focused_query_for_weaviate(prompt)
+        focused_query = await generate_focused_query_for_weaviate(request.prompt)
         print(f"🎯 Generated focused query: {focused_query}")
-        
+
         # Step 2: Use the focused query to search Weaviate and extract raw data
         print(f"\n🔍 ===== SEARCHING WEAVIATE WITH FOCUSED QUERY =====")
+        extracted_data = []
         if weaviate_service.connect():
-            # Use semantic search to get raw data objects from Weaviate
             collection = weaviate_service.client.collections.get("NormalizedDocuments")
-            
             print(f"      🔍 Performing semantic search with focused query...")
             search_results = collection.query.near_text(
                 query=focused_query,
-                limit=5,  # Get top 5 most relevant documents
+                limit=5,
                 return_metadata=["distance", "score"]
             )
-            
             weaviate_service.close()
-            
-            # Extract and format the data for VAPI
-            extracted_data = []
             for result in search_results.objects:
+                # Convert UUID to string and ensure all data is JSON serializable
+                # Also convert any UUIDs in properties to strings
+                properties = {}
+                for key, value in result.properties.items():
+                    if hasattr(value, '__str__'):
+                        properties[key] = str(value)
+                    else:
+                        properties[key] = value
+                
                 data_object = {
                     "id": str(result.uuid),
-                    "properties": result.properties,
+                    "properties": properties,
                     "metadata": {
-                        "distance": result.metadata.distance if result.metadata.distance else None,
-                        "score": result.metadata.score if result.metadata.score else None
+                        "distance": float(result.metadata.distance) if result.metadata.distance else None,
+                        "score": float(result.metadata.score) if result.metadata.score else None
                     }
                 }
                 extracted_data.append(data_object)
-            
             print(f"✅ Retrieved {len(extracted_data)} data objects from Weaviate")
-            print(f"📊 Data objects preview: {len(str(extracted_data))} characters total")
-            
-            return {
-                "message": "VAPI data extracted successfully",
-                "original_prompt": prompt,
-                "focused_query": focused_query,
-                "extracted_data": extracted_data,
-                "data_count": len(extracted_data),
-                "status": "success"
-            }
         else:
-            return {
-                "message": "Failed to connect to Weaviate",
-                "status": "error"
+            return {"message": "Failed to connect to Weaviate", "status": "error"}
+
+        # Step 3: Make VAPI call using the proper VAPI API structure
+        vapi_api_key = os.getenv("VAPI_API_KEY", "YOUR_VAPI_API_KEY")
+        vapi_assistant_id = os.getenv("VAPI_ASSISTANT_ID", "your-assistant-id")
+        vapi_phone_number_id = os.getenv("VAPI_PHONE_NUMBER_ID", "your-phone-number-id")
+        
+        # VAPI call endpoint - this initiates a call
+        vapi_url = "https://api.vapi.ai/call"
+        vapi_payload = {
+            "assistantId": vapi_assistant_id,
+            "phoneNumberId": vapi_phone_number_id,
+            "customer": {
+                "number": request.phone_number
             }
-            
+        }
+        vapi_headers = {
+            "Authorization": f"Bearer {vapi_api_key}",
+            "Content-Type": "application/json"
+        }
+        import requests
+        vapi_response = None
+        try:
+            print(f"\n📞 ===== MAKING VAPI CALL =====")
+            print(f"📞 Calling: {request.phone_number}")
+            print(f"🤖 Assistant ID: {vapi_assistant_id}")
+            vapi_response = requests.post(vapi_url, json=vapi_payload, headers=vapi_headers)
+            print(f"VAPI response status: {vapi_response.status_code}")
+            vapi_response_json = vapi_response.json() if vapi_response.content else {}
+            print(f"VAPI response: {vapi_response_json}")
+        except Exception as vapi_error:
+            print(f"❌ Error making VAPI call: {vapi_error}")
+            vapi_response_json = {"error": str(vapi_error)}
+
+        return {
+            "message": "VAPI data extracted and call made successfully",
+            "original_prompt": request.prompt,
+            "focused_query": focused_query,
+            "extracted_data": extracted_data,
+            "data_count": len(extracted_data),
+            "phone_number": request.phone_number,
+            "vapi_response": vapi_response_json,
+            "status": "success"
+        }
     except Exception as e:
         print(f"❌ Error in Weaviate Query Generator: {str(e)}")
         import traceback

@@ -118,13 +118,18 @@ export default function HomePage() {
         setPhoneNumber("")
         
         // Show detailed success message
+        const vapiStatus = result.vapi_result?.error ? 
+          `VAPI Call: Failed - ${result.vapi_result.error}` : 
+          `VAPI Call: Success - Query generated and call initiated`
+        
         const message = `Consultation processed successfully!
         
 Session ID: ${result.consultation_id}
 Files Processed: ${result.files_processed?.total || 0} (${result.files_processed?.pdfs || 0} PDFs, ${result.files_processed?.images || 0} images)
 Stored in Weaviate: ${result.weaviate_stored ? 'Yes' : 'No'}
+${vapiStatus}
 
-Your consultation has been processed by Gemini AI and stored in the Weaviate database for future reference.`
+Your consultation has been processed by Gemini AI, stored in the Weaviate database, and a VAPI call has been initiated with the extracted context.`
         
         alert(message)
       } else {

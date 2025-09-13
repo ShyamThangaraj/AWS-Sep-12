@@ -90,9 +90,42 @@ Please analyze this consultation request and the uploaded documents to provide c
     console.log(`🆔 Session ID: ${result.data?.session_id}`)
     console.log(`💾 Weaviate stored: ${result.weaviate_stored}`)
 
+    // Now call the VAPI endpoint to generate query and make the call
+    console.log("\n📞 ===== CALLING VAPI ENDPOINT =====")
+    let vapiResult = null
+    try {
+      const vapiResponse = await fetch(`${config.backendUrl}/weaviate/weaviate-query-generator`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: "Act and speak as Bill Gates, imitating his tone, cadence, and natural speaking style—measured pace, thoughtful pauses, slight chuckles when making a point, and a reflective, analytical tone. Use the way he structures answers: starting with context, breaking down the problem logically, and finishing with pragmatic advice. Provide clear, actionable startup and business advice with Bill Gates' characteristic measured pace and analytical approach. Focus on practical solutions for startup founders seeking to optimize their business strategies and achieve product-market fit. Address the specific challenges and opportunities presented in the consultation context using Bill Gates' problem-solving methodology.",
+          phone_number: phoneNumber
+        })
+      })
+      
+      console.log(`📊 VAPI response status: ${vapiResponse.status}`)
+      
+      if (vapiResponse.ok) {
+        vapiResult = await vapiResponse.json()
+        console.log("✅ VAPI call completed successfully")
+        console.log(`🎯 Focused query: ${vapiResult.focused_query}`)
+        console.log(`📊 Data extracted: ${vapiResult.data_count} objects`)
+        console.log(`📞 Phone number: ${vapiResult.phone_number}`)
+      } else {
+        const errorText = await vapiResponse.text()
+        console.log(`❌ VAPI call failed: ${vapiResponse.status} - ${errorText}`)
+        vapiResult = { error: `VAPI call failed: ${errorText}` }
+      }
+    } catch (vapiError) {
+      console.log(`❌ VAPI call error: ${vapiError}`)
+      vapiResult = { error: `VAPI call error: ${vapiError}` }
+    }
+
     return NextResponse.json({
       success: true,
-      message: "Consultation processed and stored in Weaviate successfully",
+      message: "Consultation processed, stored in Weaviate, and VAPI call initiated successfully",
       consultation_id: result.data?.session_id || 'generated-id',
       weaviate_stored: result.weaviate_stored,
       normalized_text: result.data?.normalized_text,
@@ -100,7 +133,8 @@ Please analyze this consultation request and the uploaded documents to provide c
         total: files.length,
         pdfs: pdfFiles.length,
         images: imageFiles.length
-      }
+      },
+      vapi_result: vapiResult
     })
   } catch (error) {
     console.error("Consultation request error:", error)
